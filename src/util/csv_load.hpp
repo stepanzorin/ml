@@ -7,17 +7,16 @@
 #include <optional>
 
 #include "util/detail/csv_load.hpp"
+#include "util/detail/csv_parse_helpers.hpp"
 
 namespace ml::util {
 
 template<typename... ColumnTypes>
-[[nodiscard]] typed_csv_table_with_headers_s<ColumnTypes...> read_csv(
-        const std::filesystem::path &path,
-        const std::optional<char> delimiter = std::nullopt) {
+[[nodiscard]] typed_csv_table_with_headers_s<ColumnTypes...> read_csv(const std::filesystem::path &path,
+                                                                      const csv_read_options_s &options = {}) {
     static_assert(sizeof...(ColumnTypes) > 0, "CSV table must contain at least one column type");
 
-    const auto actual_delimiter = detail::resolve_delimiter(delimiter);
-    const auto raw = detail::parse_raw_csv(path, actual_delimiter, true);
+    const auto raw = detail::parse_raw_csv(path, options, true);
 
     detail::validate_headers_count<ColumnTypes...>(*raw.headers);
 
@@ -34,13 +33,11 @@ template<typename... ColumnTypes>
 }
 
 template<typename... ColumnTypes>
-[[nodiscard]] typed_csv_table_s<ColumnTypes...> read_csv_without_headers(
-        const std::filesystem::path &path,
-        const std::optional<char> delimiter = std::nullopt) {
+[[nodiscard]] typed_csv_table_s<ColumnTypes...> read_csv_without_headers(const std::filesystem::path &path,
+                                                                         const csv_read_options_s &options = {}) {
     static_assert(sizeof...(ColumnTypes) > 0, "CSV table must contain at least one column type");
 
-    const auto actual_delimiter = detail::resolve_delimiter(delimiter);
-    const auto raw = detail::parse_raw_csv(path, actual_delimiter, false);
+    const auto raw = detail::parse_raw_csv(path, options, false);
 
     auto table = typed_csv_table_s<ColumnTypes...>{};
 
@@ -56,11 +53,10 @@ template<typename... ColumnTypes>
 template<typename... ColumnTypes>
 [[nodiscard]] nullable_typed_csv_table_with_headers_s<ColumnTypes...> read_nullable_csv(
         const std::filesystem::path &path,
-        const std::optional<char> delimiter = std::nullopt) {
+        const csv_read_options_s &options = {}) {
     static_assert(sizeof...(ColumnTypes) > 0, "CSV table must contain at least one column type");
 
-    const auto actual_delimiter = detail::resolve_delimiter(delimiter);
-    const auto raw = detail::parse_raw_csv(path, actual_delimiter, true);
+    const auto raw = detail::parse_raw_csv(path, options, true);
 
     detail::validate_headers_count<ColumnTypes...>(*raw.headers);
 
@@ -79,11 +75,10 @@ template<typename... ColumnTypes>
 template<typename... ColumnTypes>
 [[nodiscard]] nullable_typed_csv_table_s<ColumnTypes...> read_nullable_csv_without_headers(
         const std::filesystem::path &path,
-        const std::optional<char> delimiter = std::nullopt) {
+        const csv_read_options_s &options = {}) {
     static_assert(sizeof...(ColumnTypes) > 0, "CSV table must contain at least one column type");
 
-    const auto actual_delimiter = detail::resolve_delimiter(delimiter);
-    const auto raw = detail::parse_raw_csv(path, actual_delimiter, false);
+    const auto raw = detail::parse_raw_csv(path, options, false);
 
     auto table = nullable_typed_csv_table_s<ColumnTypes...>{};
 
@@ -96,4 +91,4 @@ template<typename... ColumnTypes>
     return table;
 }
 
-} // namespace ml
+} // namespace ml::util

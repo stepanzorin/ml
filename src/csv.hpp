@@ -10,17 +10,24 @@
 
 namespace ml {
 
-using csv_headers_t = std::vector<std::string>;
-
-
-struct raw_csv_cell_s {
-    std::string value;
-    bool quoted = false;
+struct csv_range_s {
+    std::size_t offset{};
+    std::optional<std::size_t> count = std::nullopt;
 };
 
+struct csv_read_options_s {
+    std::optional<char> delimiter = std::nullopt;
+
+    csv_range_s columns{};
+    csv_range_s rows{};
+};
+
+
+using csv_headers_t = std::vector<std::string>;
+
 struct raw_csv_row_s {
-    std::size_t line_number;
-    std::vector<raw_csv_cell_s> cells;
+    std::size_t line_number{};
+    std::vector<std::string> cells;
 };
 
 struct raw_csv_content_s {

@@ -1,21 +1,63 @@
 #include "csv_load.hpp"
 
-#include <cstdint>
 #include <cstddef>
+#include <cstdint>
+#include <filesystem>
 #include <format>
 #include <memory>
 #include <optional>
 #include <stdexcept>
 #include <string_view>
-#include <filesystem>
 #include <vector>
 
 #include <algorithm>
+#include <limits>
 #include <ranges>
 #include <system_error>
-#include <limits>
 
 namespace ml::util::detail {
+
+std::size_t resolve_range_end(const std::size_t total_size,
+                              const csv_range_s &range,
+                              const std::string_view entity_name) {
+    if (range.offset > total_size) {
+        throw std::runtime_error{
+                std::format("{} offset {} is out of range. Total size is {}", entity_name, range.offset, total_size)};
+    }
+
+    if (!range.count.has_value()) {
+        return total_size;
+    }
+
+    if (*range.count > total_size - range.offset) {
+        throw std::runtime_error{std::format("{} range [{}, {}) is out of range. Total size is {}",
+                                             entity_name,
+                                             range.offset,
+                                             range.offset + *range.count,
+                                             total_size)};
+    }
+
+    return range.offset + *range.count;
+}
+
+std::vector<std::string> select_columns(const std::vector<std::string> &cells,
+                                        const csv_range_s &columns,
+                                        const std::size_t line_number) {
+    const auto end = resolve_range_end(cells.size(), columns, "Column");
+
+    auto selected = std::vector<std::string>{};
+    selected.reserve(end - columns.offset);
+
+    for (auto i = columns.offset; i < end; ++i) {
+        selected.push_back(cells[i]);
+    }
+
+    if (selected.empty()) {
+        throw std::runtime_error{std::format("No columns selected at line {}", line_number)};
+    }
+
+    return selected;
+}
 
 char resolve_delimiter(const std::optional<char> delimiter) {
     const auto actual_delimiter = delimiter.value_or(',');
@@ -103,27 +145,27 @@ std::string read_file_content(const std::filesystem::path &path) {
 
     return content;
 }
-
-std::vector<raw_csv_cell_s> split_csv_record(const std::string_view record,
-                                             const char delimiter,
-                                             const std::size_t line_number) {
-    auto cells = std::vector<raw_csv_cell_s>{};
+std::vector<std::string> split_csv_record(const std::string_view record,
+                                          const char delimiter,
+                                          const std::size_t line_number) {
+    auto cells = std::vector<std::string>{};
 
     auto cell = std::string{};
     auto in_quotes = false;
-    auto cell_was_quoted = false;
     auto quote_was_closed = false;
+    auto cell_was_quoted = false;
 
-    const auto push_cell = [&cells, &cell, &cell_was_quoted, &quote_was_closed] {
+    const auto push_cell = [&] {
         if (cell_was_quoted) {
-            cells.push_back(raw_csv_cell_s{.value = cell, .quoted = true});
+            cells.push_back(cell);
         } else {
-            cells.push_back(raw_csv_cell_s{.value = trim(cell), .quoted = false});
+            cells.push_back(trim(cell));
         }
 
         cell.clear();
-        cell_was_quoted = false;
+        in_quotes = false;
         quote_was_closed = false;
+        cell_was_quoted = false;
     };
 
     for (auto i = std::size_t{0}; i < record.size(); ++i) {
@@ -182,23 +224,11 @@ std::vector<raw_csv_cell_s> split_csv_record(const std::string_view record,
     return cells;
 }
 
-csv_headers_t make_headers(const std::vector<raw_csv_cell_s> &cells, const std::size_t line_number) {
-    auto headers = csv_headers_t{};
-    headers.reserve(cells.size());
-
-    for (const auto &[i, cell] : std::views::enumerate(cells)) {
-        if (cell.value.empty()) {
-            throw std::runtime_error{std::format("Empty CSV header at line {}, column {}", line_number, i + 1)};
-        }
-
-        headers.push_back(cell.value);
-    }
-
-    return headers;
-}
-
-raw_csv_content_s parse_raw_csv(const std::filesystem::path &path, const char delimiter, const bool has_headers) {
+raw_csv_content_s parse_raw_csv(const std::filesystem::path &path,
+                                const csv_read_options_s &options,
+                                const bool has_headers) {
     const auto path_string = path.string();
+    const auto delimiter = resolve_delimiter(options.delimiter);
     const auto content = read_file_content(path);
 
     if (content.empty()) {
@@ -207,8 +237,14 @@ raw_csv_content_s parse_raw_csv(const std::filesystem::path &path, const char de
 
     auto result = raw_csv_content_s{};
 
+    const auto row_begin = options.rows.offset;
+
+    const auto row_end = options.rows.count.has_value() ? row_begin + *options.rows.count
+                                                        : std::numeric_limits<std::size_t>::max();
+
     auto line_start = std::size_t{0};
     auto line_number = std::size_t{0};
+    auto data_row_index = std::size_t{0};
     auto first_content_line_was_read = false;
 
     while (line_start <= content.size()) {
@@ -228,11 +264,16 @@ raw_csv_content_s parse_raw_csv(const std::filesystem::path &path, const char de
 
         if (!is_empty_or_spaces(line)) {
             const auto cells = split_csv_record(line, delimiter, line_number);
+            const auto selected_cells = select_columns(cells, options.columns, line_number);
 
             if (!first_content_line_was_read && has_headers) {
-                result.headers = make_headers(cells, line_number);
+                result.headers = selected_cells;
             } else {
-                result.rows.push_back(raw_csv_row_s{.line_number = line_number, .cells = cells});
+                if (data_row_index >= row_begin && data_row_index < row_end) {
+                    result.rows.push_back(raw_csv_row_s{.line_number = line_number, .cells = selected_cells});
+                }
+
+                ++data_row_index;
             }
 
             first_content_line_was_read = true;
@@ -250,7 +291,7 @@ raw_csv_content_s parse_raw_csv(const std::filesystem::path &path, const char de
     }
 
     if (result.rows.empty()) {
-        throw std::runtime_error{std::format("CSV contains no data rows: '{}'", path_string)};
+        throw std::runtime_error{std::format("CSV contains no selected data rows: '{}'", path_string)};
     }
 
     return result;

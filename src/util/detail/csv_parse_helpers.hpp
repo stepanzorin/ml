@@ -16,6 +16,8 @@
 #include <type_traits>
 #include <utility>
 
+#include "csv.hpp"
+
 namespace ml::util::detail {
 
 template<typename>
@@ -168,31 +170,27 @@ template<typename T>
 }
 
 template<typename T>
-[[nodiscard]] T parse_required_cell(const raw_csv_cell_s &cell,
+[[nodiscard]] T parse_required_cell(const std::string &raw_value,
                                     const std::size_t line_number,
                                     const std::size_t column_number) {
-    if (cell.value.empty()) {
-        if constexpr (std::same_as<T, std::string>) {
-            if (cell.quoted) {
-                return std::string{};
-            }
-        }
+    const auto value = trim(raw_value);
 
+    if (value.empty()) {
         throw std::runtime_error{std::format("Empty required value at line {}, column {}", line_number, column_number)};
     }
 
     if constexpr (std::same_as<T, std::string>) {
-        return cell.value;
+        return value;
     } else if constexpr (std::same_as<T, bool>) {
-        return parse_bool_cell(cell.value, line_number, column_number);
+        return parse_bool_cell(value, line_number, column_number);
     } else if constexpr (std::integral<T>) {
-        return parse_integer_cell<T>(cell.value, line_number, column_number);
+        return parse_integer_cell<T>(value, line_number, column_number);
     } else if constexpr (std::floating_point<T>) {
-        return parse_floating_point_cell<T>(cell.value, line_number, column_number);
+        return parse_floating_point_cell<T>(value, line_number, column_number);
     } else if constexpr (is_year_month_day_v<T>) {
-        return parse_year_month_day_cell(cell.value, line_number, column_number);
+        return parse_year_month_day_cell(value, line_number, column_number);
     } else if constexpr (is_sys_days_v<T>) {
-        return std::chrono::sys_days{parse_year_month_day_cell(cell.value, line_number, column_number)};
+        return std::chrono::sys_days{parse_year_month_day_cell(value, line_number, column_number)};
     } else {
         static_assert(always_false_v<T>, "Unsupported CSV column type");
     }
@@ -201,14 +199,16 @@ template<typename T>
 }
 
 template<typename T>
-[[nodiscard]] std::optional<T> parse_nullable_cell(const raw_csv_cell_s &cell,
+[[nodiscard]] std::optional<T> parse_nullable_cell(const std::string &raw_value,
                                                    const std::size_t line_number,
                                                    const std::size_t column_number) {
-    if (cell.value.empty() && !cell.quoted) {
+    const auto value = trim(raw_value);
+
+    if (value.empty()) {
         return std::nullopt;
     }
 
-    return parse_required_cell<T>(cell, line_number, column_number);
+    return parse_required_cell<T>(value, line_number, column_number);
 }
 
 template<typename... ColumnTypes, std::size_t... Indexes>

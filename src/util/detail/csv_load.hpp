@@ -6,18 +6,17 @@
 #define _CRT_SECURE_NO_WARNINGS
 #include <cstdio>
 
-#include <cstdint>
 #include <cstddef>
+#include <cstdint>
+#include <filesystem>
 #include <format>
 #include <memory>
 #include <optional>
 #include <stdexcept>
 #include <string_view>
-#include <filesystem>
 #include <vector>
 
 #include "csv.hpp"
-#include "util/detail/csv_parse_helpers.hpp"
 
 namespace ml::util::detail {
 
@@ -42,6 +41,14 @@ void validate_headers_count(const csv_headers_t &headers) {
     }
 }
 
+[[nodiscard]] std::size_t resolve_range_end(std::size_t total_size,
+                                            const csv_range_s &range,
+                                            std::string_view entity_name);
+
+[[nodiscard]] std::vector<std::string> select_columns(const std::vector<std::string> &cells,
+                                                      const csv_range_s &columns,
+                                                      std::size_t line_number);
+
 [[nodiscard]] char resolve_delimiter(std::optional<char> delimiter);
 
 [[nodiscard]] bool is_space(char c) noexcept;
@@ -56,12 +63,12 @@ void validate_headers_count(const csv_headers_t &headers) {
 
 [[nodiscard]] std::string read_file_content(const std::filesystem::path &path);
 
-[[nodiscard]] std::vector<raw_csv_cell_s> split_csv_record(std::string_view record,
-                                                           char delimiter,
-                                                           std::size_t line_number);
+[[nodiscard]] std::vector<std::string> split_csv_record(std::string_view record,
+                                                        char delimiter,
+                                                        std::size_t line_number);
 
-[[nodiscard]] csv_headers_t make_headers(const std::vector<raw_csv_cell_s> &cells, std::size_t line_number);
-
-[[nodiscard]] raw_csv_content_s parse_raw_csv(const std::filesystem::path &path, char delimiter, bool has_headers);
+[[nodiscard]] raw_csv_content_s parse_raw_csv(const std::filesystem::path &path,
+                                              const csv_read_options_s &options,
+                                              bool has_headers);
 
 } // namespace ml::util::detail
