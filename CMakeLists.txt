@@ -11,6 +11,8 @@ add_executable(ml src/main.cpp)
 
 target_include_directories(ml PUBLIC src)
 
+target_compile_definitions(ml PRIVATE ML_APPLICATION_DIR_PATH="${PROJECT_SOURCE_DIR}")
+
 include(FetchContent)
 
 FetchContent_Declare(

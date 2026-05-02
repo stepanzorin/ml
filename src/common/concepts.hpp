@@ -8,9 +8,6 @@
 namespace ml::common {
 
 template<typename T>
-concept cvs_column = requires(const T sample) { std::default_initializable<T>; };
-
-template<typename T>
 concept dataset_sample = requires(const T sample) {
     { sample.features };
     { sample.target };
