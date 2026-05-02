@@ -1,0 +1,30 @@
+cmake_minimum_required(VERSION 3.30)
+
+project(
+    ml
+    VERSION 1.0.1
+    LANGUAGES CXX C)
+
+set(CMAKE_CXX_STANDARD 23)
+
+add_executable(ml src/main.cpp)
+
+target_include_directories(ml PUBLIC src)
+
+include(FetchContent)
+
+FetchContent_Declare(
+        Eigen3
+        GIT_REPOSITORY https://gitlab.com/libeigen/eigen.git
+        GIT_TAG        3.4.0
+        GIT_SHALLOW    TRUE
+)
+
+FetchContent_MakeAvailable(Eigen3)
+
+target_link_libraries(ml
+        PRIVATE
+        Eigen3::Eigen
+)
+
+add_subdirectory(src)
