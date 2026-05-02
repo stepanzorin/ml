@@ -29,4 +29,19 @@ target_link_libraries(ml
         Eigen3::Eigen
 )
 
+FetchContent_Declare(
+        csv
+        GIT_REPOSITORY https://github.com/vincentlaucsb/csv-parser.git
+        GIT_TAG        4.0.0
+        GIT_SHALLOW    TRUE
+)
+
+FetchContent_MakeAvailable(csv)
+
+target_link_libraries(ml
+        PRIVATE
+        Eigen3::Eigen
+        csv
+)
+
 add_subdirectory(src)
