@@ -47,6 +47,8 @@ struct typed_csv_table_s {
 
 template<typename... ColumnTypes>
 struct typed_csv_table_with_headers_s {
+    using row_type = csv_row_t<ColumnTypes...>;
+
     csv_headers_t headers;
     std::vector<csv_row_t<ColumnTypes...>> rows;
 
@@ -68,6 +70,8 @@ struct nullable_typed_csv_table_s {
 
 template<typename... ColumnTypes>
 struct nullable_typed_csv_table_with_headers_s {
+    using row_type = csv_row_t<ColumnTypes...>;
+
     csv_headers_t headers;
     std::vector<nullable_csv_row_t<ColumnTypes...>> rows;
 
