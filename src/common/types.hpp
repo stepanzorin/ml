@@ -14,15 +14,11 @@
 
 namespace ml::common {
 
-namespace detail {
-
 template<std::default_initializable TargetType>
 struct sample_s {
     std::vector<double> features;
     TargetType target = {};
 };
-
-} // namespace detail
 
 template<dataset_sample SampleType, bool Normalized = false>
 struct tabular_dataset_s {
