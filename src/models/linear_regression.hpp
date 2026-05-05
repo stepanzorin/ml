@@ -1,5 +1,10 @@
+// ML (https://github.com/stepanzorin/ml)
+// Copyright Text: 2026 Stepan Zorin <stz.hom@gmail.com>
+
 #pragma once
 
+#include <cstddef>
+#include <cstdint>
 #include <print>
 #include <vector>
 

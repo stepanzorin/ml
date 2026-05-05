@@ -1,5 +1,6 @@
 #include <csv.hpp>
 
+#include "common/polynomial_features.hpp"
 #include "models/linear_regression.hpp"
 
 int main() {
@@ -15,15 +16,20 @@ int main() {
                                                              {{23.0, 1.0, 3.0}, 64.0},
                                                              {{24.0, 1.0, 4.0}, 70.0}};
 
-    auto model = ml::models::LinearRegression(3);
+    for (auto &sample : samples) {
+        sample.features = ml::common::generate_polynomial_features(sample.features, {2});
+    }
 
-    model.train(samples, 20'000, 0.0001);
+    auto model = ml::models::LinearRegression(samples.front().features.size());
+
+    model.train(samples, 50'000, 1e-8);
 
     model.print_parameters();
 
     const auto new_day = std::vector{27.0, 1.0, 5.0};
+    const auto p_new_day = ml::common::generate_polynomial_features(new_day, {2});
 
-    const auto prediction = model.predict(new_day);
+    const auto prediction = model.predict(p_new_day);
 
     std::cout << "\nPrediction: " << prediction << '\n';
 

@@ -34,7 +34,7 @@ void LinearRegression::train(const std::vector<common::sample_s<double>> &sample
         throw std::runtime_error{"Learning rate must be positive"};
     }
 
-    auto record_metric = [&](std::optional<metrics::regression::metrics_s<double>> &record) {
+    const auto record_metric = [&](std::optional<metrics::regression::metrics_s<double>> &record) {
         auto predictions = std::vector<double>{};
         auto targets = std::vector<double>{};
 

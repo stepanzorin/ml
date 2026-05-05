@@ -10,7 +10,7 @@
 #include <string>
 #include <vector>
 
-#include "common/concepts.hpp"
+#include "common/traits.hpp"
 
 namespace ml::common {
 
