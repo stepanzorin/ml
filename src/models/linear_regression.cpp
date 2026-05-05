@@ -1,12 +1,15 @@
 #include "linear_regression.hpp"
 
 #include <algorithm>
+#include <optional>
 #include <ranges>
 #include <stdexcept>
 
+#include "metrics/regression/metrics.hpp"
+
 namespace ml::models {
 
-double LinearRegression::predict(const std::vector<double> &features) {
+double LinearRegression::predict(const std::vector<double> &features) const {
     if (features.size() != m_weights.size()) {
         throw std::runtime_error{"Feature count must match weight count"};
     }
@@ -31,6 +34,23 @@ void LinearRegression::train(const std::vector<common::sample_s<double>> &sample
         throw std::runtime_error{"Learning rate must be positive"};
     }
 
+    auto record_metric = [&](std::optional<metrics::regression::metrics_s<double>> &record) {
+        auto predictions = std::vector<double>{};
+        auto targets = std::vector<double>{};
+
+        predictions.reserve(samples.size());
+        targets.reserve(samples.size());
+
+        for (const auto &[features, target] : samples) {
+            predictions.push_back(predict(features));
+            targets.push_back(target);
+        }
+
+        record.emplace(metrics::regression::evaluate_metrics(targets, predictions));
+    };
+
+    record_metric(m_metrics_history.first_train_record);
+
     const auto sample_count = static_cast<double>(samples.size());
 
     for (const auto _ : std::views::iota(0u, epoch_count)) {
@@ -39,10 +59,6 @@ void LinearRegression::train(const std::vector<common::sample_s<double>> &sample
         auto weight_gradients = std::vector(m_weights.size(), 0.0);
 
         for (const auto &[features, target] : samples) {
-            if (features.size() != m_weights.size()) {
-                throw std::runtime_error{"Feature count must match weight count"};
-            }
-
             const auto prediction = predict(features);
             const auto error = prediction - target;
 
@@ -59,11 +75,16 @@ void LinearRegression::train(const std::vector<common::sample_s<double>> &sample
             weight -= (weight_gradient / sample_count) * learning_rate;
         }
     }
+
+    record_metric(m_metrics_history.last_train_record);
 }
 
 void LinearRegression::print_parameters() const noexcept {
     std::println("bias: {}", m_bias);
     std::println("weights: {}", m_weights);
+
+    std::println("train metrics:");
+    m_metrics_history.print_diff();
 }
 
 } // namespace ml::models
