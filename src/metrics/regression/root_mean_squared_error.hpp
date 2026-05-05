@@ -5,6 +5,7 @@
 
 #include <concepts>
 #include <vector>
+#include <cmath>
 
 #include "metrics/regression/mean_squared_error.hpp"
 

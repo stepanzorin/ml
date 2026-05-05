@@ -8,6 +8,7 @@
 #include <concepts>
 #include <ranges>
 #include <stdexcept>
+#include <utility>
 #include <vector>
 
 namespace ml::metrics::regression {
