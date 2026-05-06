@@ -5,7 +5,6 @@
 
 #include <cstddef>
 #include <cstdint>
-#include <print>
 #include <vector>
 
 #include "common/types.hpp"

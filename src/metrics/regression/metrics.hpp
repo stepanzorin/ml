@@ -6,10 +6,9 @@
 #include <cassert>
 #include <concepts>
 #include <vector>
-// #include <optional>
+#include <optional>
 #include <print>
 
-#include "common/types.hpp"
 #include "metrics/regression/mean_absolute_error.hpp"
 #include "metrics/regression/mean_squared_error.hpp"
 #include "metrics/regression/r2_score.hpp"
@@ -25,10 +24,10 @@ struct metrics_s {
     MetricsType r2_score = {};
 
     void print() const noexcept {
-        std::println("mae: {}", mae);
-        std::println("mse: {}", mse);
-        std::println("rmse: {}", rmse);
-        std::println("r2_score: {}\n", r2_score);
+        std::println("MAE: {}", mae);
+        std::println("MSE: {}", mse);
+        std::println("RMSE: {}", rmse);
+        std::println("R2: {}\n", r2_score);
     }
 };
 
