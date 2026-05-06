@@ -5,3 +5,8 @@ target_sources(
         regression/metrics.hpp
         regression/r2_score.hpp
         regression/root_mean_squared_error.hpp)
+
+target_sources(
+        ml PRIVATE
+        generalization.cpp
+        generalization.hpp)
