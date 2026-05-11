@@ -24,7 +24,7 @@ double LinearRegression::predict(const std::vector<double> &features) const {
     return prediction;
 }
 
-void LinearRegression::train(const std::vector<common::sample_s<double>> &samples,
+void LinearRegression::train(const std::vector<regression_sample_s> &samples,
                              const std::uint32_t epoch_count,
                              const double learning_rate) {
     if (samples.empty()) {
