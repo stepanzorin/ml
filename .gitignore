@@ -587,3 +587,5 @@ FodyWeavers.xsd
 
 # additional build directories
 /build
+
+/cmake*

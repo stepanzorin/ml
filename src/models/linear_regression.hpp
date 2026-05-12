@@ -7,8 +7,9 @@
 #include <cstdint>
 #include <vector>
 
-#include "types.hpp"
 #include "metrics/regression/metrics.hpp"
+#include "regularization/regularization.hpp"
+#include "types.hpp"
 
 namespace ml::models {
 
@@ -18,7 +19,10 @@ public:
 
     [[nodiscard]] double predict(const std::vector<double> &features) const;
 
-    void train(const std::vector<regression_sample_s> &samples, std::uint32_t epoch_count, double learning_rate);
+    void train(const std::vector<regression_sample_s> &samples,
+               std::uint32_t epoch_count,
+               double learning_rate,
+               const regularization::regularization_s &regularization = {});
 
     void print_parameters() const noexcept;
 

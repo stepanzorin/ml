@@ -26,7 +26,8 @@ double LinearRegression::predict(const std::vector<double> &features) const {
 
 void LinearRegression::train(const std::vector<regression_sample_s> &samples,
                              const std::uint32_t epoch_count,
-                             const double learning_rate) {
+                             const double learning_rate,
+                             const regularization::regularization_s &regularization) {
     if (samples.empty()) {
         throw std::runtime_error{"Samples must not be empty"};
     }
@@ -34,6 +35,8 @@ void LinearRegression::train(const std::vector<regression_sample_s> &samples,
     if (learning_rate <= 0.0) {
         throw std::runtime_error{"Learning rate must be positive"};
     }
+
+    regularization::validate_regularization(regularization);
 
     const auto record_metric = [&](std::optional<metrics::regression::metrics_s<double>> &record) {
         auto predictions = std::vector<double>{};
@@ -73,7 +76,19 @@ void LinearRegression::train(const std::vector<regression_sample_s> &samples,
         m_bias -= (bias_gradient / sample_count) * learning_rate;
 
         for (auto &&[weight, weight_gradient] : std::views::zip(m_weights, weight_gradients)) {
-            weight -= (weight_gradient / sample_count) * learning_rate;
+            const auto data_gradient = weight_gradient / sample_count;
+            const auto penalty_gradient = regularization::regularization_gradient(regularization, weight);
+            const auto total_gradient = data_gradient + penalty_gradient;
+
+            if (!std::isfinite(total_gradient)) {
+                throw std::runtime_error{"Non-finite gradient detected"};
+            }
+
+            weight -= learning_rate * total_gradient;
+
+            if (!std::isfinite(weight)) {
+                throw std::runtime_error{"Non-finite weight detected"};
+            }
         }
     }
 

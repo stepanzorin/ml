@@ -19,16 +19,8 @@ include(FetchContent)
 FetchContent_Declare(
         rapidjson
         GIT_REPOSITORY https://github.com/Tencent/rapidjson.git
-        GIT_TAG        v1.1.0
-        GIT_SHALLOW    TRUE
-        SOURCE_SUBDIR include
-)
-
-FetchContent_Declare(
-        Eigen3
-        GIT_REPOSITORY https://gitlab.com/libeigen/eigen.git
-        GIT_TAG        3.4.0
-        GIT_SHALLOW    TRUE
+        GIT_TAG master
+        GIT_SHALLOW TRUE
 )
 
 FetchContent_Declare(
@@ -39,7 +31,6 @@ FetchContent_Declare(
 )
 
 FetchContent_MakeAvailable(rapidjson)
-FetchContent_MakeAvailable(Eigen3)
 FetchContent_MakeAvailable(spdlog)
 
 target_include_directories(ml
@@ -54,7 +45,6 @@ target_compile_definitions(ml
 
 target_link_libraries(ml
         PRIVATE
-        Eigen3::Eigen
         spdlog::spdlog
 )
 
