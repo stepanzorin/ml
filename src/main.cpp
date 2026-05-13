@@ -13,10 +13,10 @@ int main() try {
     auto model = ml::models::LinearRegression(dataset.feature_count());
 
     model.train(dataset.samples,
-                50'000,
+                1'000,
                 0.0001,
-                ml::regularization::regularization_s{.type = ml::regularization::regularization_type_e::l1_lasso,
-                                                     .l1_lambda = 10.0});
+                ml::regularization::regularization_s{.type = ml::regularization::regularization_type_e::l2_ridge,
+                                                     .l2_lambda = 0.001});
 
     model.print_parameters();
 

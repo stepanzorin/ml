@@ -1,28 +1,12 @@
 #include "linear_regression.hpp"
 
 #include <algorithm>
+#include <cassert>
 #include <optional>
-#include <print>
 #include <ranges>
 #include <stdexcept>
 
-#include "metrics/regression/metrics.hpp"
-
 namespace ml::models {
-
-double LinearRegression::predict(const std::vector<double> &features) const {
-    if (features.size() != m_weights.size()) {
-        throw std::runtime_error{"Feature count must match weight count"};
-    }
-
-    double prediction = m_bias;
-
-    for (const auto [weight, feature] : std::views::zip(m_weights, features)) {
-        prediction += weight * feature;
-    }
-
-    return prediction;
-}
 
 void LinearRegression::train(const std::vector<regression_sample_s> &samples,
                              const std::uint32_t epoch_count,
@@ -38,7 +22,7 @@ void LinearRegression::train(const std::vector<regression_sample_s> &samples,
 
     regularization::validate_regularization(regularization);
 
-    const auto record_metric = [&](std::optional<metrics::regression::metrics_s<double>> &record) {
+    const auto record_metric = [&](std::optional<metrics::regression_metrics_s<double>> &record) {
         auto predictions = std::vector<double>{};
         auto targets = std::vector<double>{};
 
@@ -50,10 +34,10 @@ void LinearRegression::train(const std::vector<regression_sample_s> &samples,
             targets.push_back(target);
         }
 
-        record.emplace(metrics::regression::evaluate_metrics(targets, predictions));
+        record.emplace(metrics::evaluate_regression_metrics(targets, predictions));
     };
 
-    record_metric(m_metrics_history.first_train_record);
+    record_metric(m_metrics_history.first);
 
     const auto sample_count = static_cast<double>(samples.size());
 
@@ -92,13 +76,16 @@ void LinearRegression::train(const std::vector<regression_sample_s> &samples,
         }
     }
 
-    record_metric(m_metrics_history.last_train_record);
+    record_metric(m_metrics_history.last);
+}
+
+double LinearRegression::predict(const std::vector<double> &features) const {
+    assert(!features.empty());
+    return score(features);
 }
 
 void LinearRegression::print_parameters() const noexcept {
-    std::println("bias: {}", m_bias);
-    std::println("weights: {}", m_weights);
-
+    print_basic_parameters();
     std::println("train metrics:");
     m_metrics_history.print_diff();
 }

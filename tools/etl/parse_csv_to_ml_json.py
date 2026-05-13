@@ -1,3 +1,5 @@
+#!/usr/bin/env python3
+
 """
 // ML (https://github.com/stepanzorin/ml)
 // Copyright Text: 2026 Stepan Zorin <stz.hom@gmail.com>
@@ -28,6 +30,7 @@ ColumnKind = Literal["numeric", "categorical", "date", "ignored", "target"]
 CategoricalEncoding = Literal["one_hot", "top_k_one_hot"]
 NumericMissingStrategy = Literal["error", "mean", "zero"]
 DateEncoding = Literal["components", "days_since_epoch"]
+ScalingMode = Literal["none", "standard", "minmax"]
 
 MISSING_TOKENS = {"", "na", "n/a", "null", "none", "nan", "-"}
 MISSING_CATEGORY = "__MISSING__"
@@ -63,6 +66,8 @@ class Options:
     top_k: int
     numeric_missing: NumericMissingStrategy
     date_encoding: DateEncoding
+    scale_numeric: ScalingMode
+    scale_target: ScalingMode
     train_ratio: float | None
     shuffle: bool
     seed: int
@@ -96,6 +101,15 @@ class FeatureInfo:
     name: str
     source_column: str
     kind: str
+
+
+@dataclass
+class ScalerSpec:
+    mode: str
+    mean: float | None = None
+    std: float | None = None
+    min: float | None = None
+    max: float | None = None
 
 
 RawRow = dict[str, str]
@@ -195,7 +209,7 @@ def read_csv_rows(path: Path, *, delimiter: str | None, encoding: str, has_heade
                 rows.append({columns[i]: padded[i] for i in range(width)})
             return columns, rows, actual_delimiter
 
-        rows = []
+        rows: RawRows = []
         for line_number, raw_row in enumerate(reader, start=start_line):
             if not raw_row or all(is_missing(cell) for cell in raw_row):
                 continue
@@ -364,7 +378,6 @@ def encode_categorical(raw_value: str, spec: CategoricalSpec) -> list[float]:
         if spec.other_category and spec.other_category in spec.categories:
             value = spec.other_category
         else:
-            # For normal one-hot without OTHER: unknown category becomes all zeros.
             return [0.0 for _ in spec.categories]
     return [1.0 if category == value else 0.0 for category in spec.categories]
 
@@ -424,6 +437,90 @@ def encode_features(row: RawRow, columns: list[str], kinds: OrderedDict[str, Col
     return features
 
 
+def is_scalable_feature(info: FeatureInfo) -> bool:
+    if info.kind in {"numeric", "date_numeric"}:
+        return True
+    if info.kind == "date_component" and info.name.endswith(":year"):
+        return True
+    return False
+
+
+def fit_scaler(values: list[float], mode: ScalingMode) -> ScalerSpec:
+    if mode == "none":
+        return ScalerSpec(mode="none")
+    if not values:
+        raise ValueError("Cannot fit scaler on empty values")
+    if mode == "standard":
+        mean = statistics.fmean(values)
+        variance = statistics.fmean([(v - mean) ** 2 for v in values])
+        std = math.sqrt(variance)
+        if not math.isfinite(std) or std == 0.0:
+            std = 1.0
+        return ScalerSpec(mode="standard", mean=mean, std=std)
+    if mode == "minmax":
+        min_value = min(values)
+        max_value = max(values)
+        return ScalerSpec(mode="minmax", min=min_value, max=max_value)
+    raise ValueError(f"Unsupported scaling mode: {mode}")
+
+
+def apply_scaler(value: float, spec: ScalerSpec) -> float:
+    if spec.mode == "none":
+        return value
+    if spec.mode == "standard":
+        assert spec.mean is not None
+        assert spec.std is not None
+        return (value - spec.mean) / spec.std
+    if spec.mode == "minmax":
+        assert spec.min is not None
+        assert spec.max is not None
+        denom = spec.max - spec.min
+        if denom == 0.0:
+            return 0.0
+        return (value - spec.min) / denom
+    raise ValueError(f"Unsupported scaler mode: {spec.mode}")
+
+
+def inverse_scaler(value: float, spec: ScalerSpec) -> float:
+    if spec.mode == "none":
+        return value
+    if spec.mode == "standard":
+        assert spec.mean is not None
+        assert spec.std is not None
+        return value * spec.std + spec.mean
+    if spec.mode == "minmax":
+        assert spec.min is not None
+        assert spec.max is not None
+        return value * (spec.max - spec.min) + spec.min
+    raise ValueError(f"Unsupported scaler mode: {spec.mode}")
+
+
+def fit_feature_scalers(feature_infos: list[FeatureInfo], fit_raw_features: list[list[float]], mode: ScalingMode) -> dict[int, ScalerSpec]:
+    scalers: dict[int, ScalerSpec] = {}
+    if mode == "none":
+        return scalers
+    if not fit_raw_features:
+        raise ValueError("Cannot fit feature scalers on empty train/fit rows")
+
+    feature_count = len(feature_infos)
+    for index in range(feature_count):
+        info = feature_infos[index]
+        if not is_scalable_feature(info):
+            continue
+        values = [features[index] for features in fit_raw_features]
+        scalers[index] = fit_scaler(values, mode)
+    return scalers
+
+
+def apply_feature_scalers(features: list[float], scalers: dict[int, ScalerSpec]) -> list[float]:
+    if not scalers:
+        return features
+    result = list(features)
+    for index, spec in scalers.items():
+        result[index] = apply_scaler(result[index], spec)
+    return result
+
+
 def build_class_mapping(values: list[str], task: TaskType) -> tuple[dict[str, int], list[str]]:
     normalized = [trim(v) for v in values if not is_missing(trim(v))]
     if not normalized:
@@ -442,13 +539,31 @@ def build_class_mapping(values: list[str], task: TaskType) -> tuple[dict[str, in
     return class_to_id, unique
 
 
-def build_target_info(options: Options, fit_rows: RawRows) -> tuple[dict[str, Any], Any]:
+def fit_target_scaler(options: Options, fit_rows: RawRows) -> ScalerSpec | None:
+    if options.scale_target == "none":
+        return None
+    if options.task != "regression":
+        raise ValueError("--scale-target is only supported for --task regression")
+    assert options.target_column is not None
+    values = []
+    for row in fit_rows:
+        value = try_parse_float(row.get(options.target_column, ""))
+        if value is None:
+            raise ValueError(f"Missing or invalid numeric target in column '{options.target_column}' while fitting target scaler")
+        values.append(value)
+    return fit_scaler(values, options.scale_target)
+
+
+def build_target_info(options: Options, fit_rows: RawRows, target_scaler: ScalerSpec | None) -> tuple[dict[str, Any], Any]:
     if options.task == "unsupervised":
         return {"mode": "none"}, None
 
     if options.task == "regression":
         assert options.target_column is not None
-        return {"mode": "numeric", "column": options.target_column}, None
+        info: dict[str, Any] = {"mode": "numeric", "column": options.target_column}
+        if target_scaler is not None:
+            info["scaler"] = asdict(target_scaler)
+        return info, None
 
     if options.task in {"binary_classification", "multiclass_classification"}:
         assert options.target_column is not None
@@ -466,7 +581,7 @@ def build_target_info(options: Options, fit_rows: RawRows) -> tuple[dict[str, An
     raise ValueError(f"Unsupported task: {options.task}")
 
 
-def encode_target(row: RawRow, options: Options, target_info: dict[str, Any], target_aux: Any) -> dict[str, Any] | None:
+def encode_target(row: RawRow, options: Options, target_info: dict[str, Any], target_aux: Any, target_scaler: ScalerSpec | None) -> dict[str, Any] | None:
     if options.task == "unsupervised":
         return None
 
@@ -475,6 +590,8 @@ def encode_target(row: RawRow, options: Options, target_info: dict[str, Any], ta
         value = try_parse_float(row.get(options.target_column, ""))
         if value is None:
             raise ValueError(f"Missing or invalid numeric target in column '{options.target_column}'")
+        if target_scaler is not None:
+            value = apply_scaler(value, target_scaler)
         return {"numeric": value}
 
     if options.task in {"binary_classification", "multiclass_classification"}:
@@ -501,19 +618,49 @@ def encode_target(row: RawRow, options: Options, target_info: dict[str, Any], ta
     raise ValueError(f"Unsupported task: {options.task}")
 
 
-def transform_rows(rows: RawRows, columns: list[str], kinds: OrderedDict[str, ColumnKind], numeric_specs: dict[str, NumericSpec], categorical_specs: dict[str, CategoricalSpec], date_specs: dict[str, DateSpec], options: Options, target_info: dict[str, Any], target_aux: Any) -> list[dict[str, Any]]:
+def transform_rows(
+        rows: RawRows,
+        columns: list[str],
+        kinds: OrderedDict[str, ColumnKind],
+        numeric_specs: dict[str, NumericSpec],
+        categorical_specs: dict[str, CategoricalSpec],
+        date_specs: dict[str, DateSpec],
+        feature_scalers: dict[int, ScalerSpec],
+        options: Options,
+        target_info: dict[str, Any],
+        target_aux: Any,
+        target_scaler: ScalerSpec | None,
+) -> list[dict[str, Any]]:
     samples: list[dict[str, Any]] = []
     for row in rows:
-        sample = {"features": encode_features(row, columns, kinds, numeric_specs, categorical_specs, date_specs)}
-        target = encode_target(row, options, target_info, target_aux)
+        raw_features = encode_features(row, columns, kinds, numeric_specs, categorical_specs, date_specs)
+        scaled_features = apply_feature_scalers(raw_features, feature_scalers)
+        sample: dict[str, Any] = {"features": scaled_features}
+        target = encode_target(row, options, target_info, target_aux, target_scaler)
         if target is not None:
             sample["target"] = target
         samples.append(sample)
     return samples
 
 
+def build_raw_features(
+        rows: RawRows,
+        columns: list[str],
+        kinds: OrderedDict[str, ColumnKind],
+        numeric_specs: dict[str, NumericSpec],
+        categorical_specs: dict[str, CategoricalSpec],
+        date_specs: dict[str, DateSpec],
+) -> list[list[float]]:
+    return [encode_features(row, columns, kinds, numeric_specs, categorical_specs, date_specs) for row in rows]
+
+
 def preprocess(options: Options) -> dict[str, Any]:
-    columns, rows, delimiter = read_csv_rows(options.input_csv, delimiter=options.delimiter, encoding=options.encoding, has_header=options.has_header)
+    columns, rows, delimiter = read_csv_rows(
+        options.input_csv,
+        delimiter=options.delimiter,
+        encoding=options.encoding,
+        has_header=options.has_header,
+    )
 
     if not rows:
         raise ValueError("CSV has no data rows")
@@ -533,14 +680,60 @@ def preprocess(options: Options) -> dict[str, Any]:
     categorical_specs = fit_categorical_specs(columns, train_fit_rows, kinds, options)
     date_specs = fit_date_specs(columns, kinds, options)
     feature_infos = build_feature_infos(columns, kinds, categorical_specs, date_specs)
-    target_info, target_aux = build_target_info(options, train_fit_rows)
 
-    all_samples = transform_rows(train_rows + test_rows, columns, kinds, numeric_specs, categorical_specs, date_specs, options, target_info, target_aux)
-    train_samples = transform_rows(train_rows, columns, kinds, numeric_specs, categorical_specs, date_specs, options, target_info, target_aux) if split.get("has_split") else []
-    test_samples = transform_rows(test_rows, columns, kinds, numeric_specs, categorical_specs, date_specs, options, target_info, target_aux) if split.get("has_split") else []
+    fit_raw_features = build_raw_features(train_fit_rows, columns, kinds, numeric_specs, categorical_specs, date_specs)
+    feature_scalers = fit_feature_scalers(feature_infos, fit_raw_features, options.scale_numeric)
+
+    target_scaler = fit_target_scaler(options, train_fit_rows)
+    target_info, target_aux = build_target_info(options, train_fit_rows, target_scaler)
+
+    all_samples = transform_rows(
+        train_rows + test_rows,
+        columns,
+        kinds,
+        numeric_specs,
+        categorical_specs,
+        date_specs,
+        feature_scalers,
+        options,
+        target_info,
+        target_aux,
+        target_scaler,
+        )
+    train_samples = transform_rows(
+        train_rows,
+        columns,
+        kinds,
+        numeric_specs,
+        categorical_specs,
+        date_specs,
+        feature_scalers,
+        options,
+        target_info,
+        target_aux,
+        target_scaler,
+    ) if split.get("has_split") else []
+    test_samples = transform_rows(
+        test_rows,
+        columns,
+        kinds,
+        numeric_specs,
+        categorical_specs,
+        date_specs,
+        feature_scalers,
+        options,
+        target_info,
+        target_aux,
+        target_scaler,
+    ) if split.get("has_split") else []
+
+    feature_scaler_by_name = {
+        feature_infos[index].name: asdict(spec)
+        for index, spec in feature_scalers.items()
+    }
 
     result: dict[str, Any] = {
-        "format_version": 3,
+        "format_version": 4,
         "task_type": options.task,
         "source_csv": str(options.input_csv),
         "target": target_info,
@@ -555,6 +748,12 @@ def preprocess(options: Options) -> dict[str, Any]:
             "numeric": {name: asdict(spec) for name, spec in numeric_specs.items()},
             "categorical": {name: asdict(spec) for name, spec in categorical_specs.items()},
             "date": {name: asdict(spec) for name, spec in date_specs.items()},
+            "feature_scaling": {
+                "mode": options.scale_numeric,
+                "scaled_features": feature_scaler_by_name,
+                "note": "Only continuous numeric/date features are scaled. One-hot features are not scaled.",
+            },
+            "target_scaling": asdict(target_scaler) if target_scaler is not None else {"mode": "none"},
             "missing_tokens": sorted(MISSING_TOKENS),
         },
         "samples": all_samples,
@@ -568,10 +767,16 @@ def preprocess(options: Options) -> dict[str, Any]:
     return result
 
 
+def default_output_path(input_csv: Path) -> Path:
+    # Keeps the same directory and filename stem, replacing only the suffix:
+    # dataset.csv -> dataset.json
+    return input_csv.with_suffix(".json")
+
+
 def parse_args() -> Options:
     parser = argparse.ArgumentParser(description="Preprocess a CSV file into ML-ready JSON for C++ tabular ML code.")
     parser.add_argument("input_csv", type=Path, help="Absolute or relative path to input CSV file")
-    parser.add_argument("--output", "-o", type=Path, default=None, help="Output JSON file path")
+    parser.add_argument("--output", "-o", type=Path, default=None, help="Output JSON file path. If omitted, input .csv is replaced with .json")
     parser.add_argument("--task", choices=("regression", "binary_classification", "multiclass_classification", "multilabel_classification", "unsupervised"), default="regression")
     parser.add_argument("--target", default=None, help="Target column for regression/binary/multiclass tasks")
     parser.add_argument("--targets", default="", help="Comma-separated target columns for multilabel_classification")
@@ -587,7 +792,9 @@ def parse_args() -> Options:
     parser.add_argument("--top-k", type=int, default=20, help="Top K categories kept for high-cardinality columns")
     parser.add_argument("--numeric-missing", choices=("error", "mean", "zero"), default="error")
     parser.add_argument("--date-encoding", choices=("components", "days_since_epoch"), default="components")
-    parser.add_argument("--train-ratio", type=float, default=None, help="Optional train/test split ratio, e.g. 0.8")
+    parser.add_argument("--scale-numeric", choices=("none", "standard", "minmax"), default="none", help="Scale continuous numeric/date features. One-hot features are not scaled")
+    parser.add_argument("--scale-target", choices=("none", "standard", "minmax"), default="none", help="Scale regression target values")
+    parser.add_argument("--train-ratio", "--train_ratio", dest="train_ratio", type=float, default=None, help="Optional train/test split ratio, e.g. 0.8")
     parser.add_argument("--shuffle", action="store_true", help="Shuffle rows before optional split/output")
     parser.add_argument("--seed", type=int, default=42)
 
@@ -595,7 +802,7 @@ def parse_args() -> Options:
     input_csv = args.input_csv.expanduser().resolve()
     if not input_csv.exists():
         raise FileNotFoundError(input_csv)
-    output_json = args.output.expanduser().resolve() if args.output else input_csv.with_suffix(".ml.json")
+    output_json = args.output.expanduser().resolve() if args.output else default_output_path(input_csv)
 
     if args.detect_sample_size <= 0:
         raise ValueError("--detect-sample-size must be positive")
@@ -605,6 +812,8 @@ def parse_args() -> Options:
         raise ValueError("--top-k must be positive")
     if args.train_ratio is not None and not (0.0 < args.train_ratio < 1.0):
         raise ValueError("--train-ratio must be between 0 and 1")
+    if args.scale_target != "none" and args.task != "regression":
+        raise ValueError("--scale-target can only be used with --task regression")
 
     target_columns = split_csv_list(args.targets)
     target_column = args.target
@@ -635,6 +844,8 @@ def parse_args() -> Options:
         top_k=args.top_k,
         numeric_missing=args.numeric_missing,
         date_encoding=args.date_encoding,
+        scale_numeric=args.scale_numeric,
+        scale_target=args.scale_target,
         train_ratio=args.train_ratio,
         shuffle=args.shuffle,
         seed=args.seed,
@@ -654,6 +865,8 @@ def main() -> None:
     print(f"Task: {result['task_type']}")
     print(f"Rows: {result['row_count']}")
     print(f"Features: {result['feature_count']}")
+    print(f"Scale numeric: {options.scale_numeric}")
+    print(f"Scale target: {options.scale_target}")
     if result.get("split", {}).get("has_split"):
         print(f"Train rows: {result['split']['train_row_count']}")
         print(f"Test rows: {result['split']['test_row_count']}")
