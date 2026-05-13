@@ -15,7 +15,8 @@ namespace {
 namespace detail {
 
 [[nodiscard]] std::string read_text_file(const std::filesystem::path &path) {
-    std::ifstream file(path, std::ios::binary);
+    auto file = std::ifstream(path, std::ios::binary);
+
     if (!file) {
         throw std::runtime_error{"Cannot open JSON file: " + path.string()};
     }
@@ -136,7 +137,7 @@ namespace detail {
         throw std::runtime_error{std::string{name} + " must be an array"};
     }
 
-    std::vector<std::string> result;
+    auto result = std::vector<std::string>{};
     result.reserve(array.Size());
 
     for (const auto &value : array.GetArray()) {
@@ -155,7 +156,7 @@ namespace detail {
         throw std::runtime_error{std::string{name} + " must be an array"};
     }
 
-    std::vector<double> result;
+    auto result = std::vector<double>{};
     result.reserve(array.Size());
 
     for (const auto &value : array.GetArray()) {
@@ -170,7 +171,8 @@ namespace detail {
 }
 
 [[nodiscard]] target_info_s read_target_info(const rapidjson::Value &object) {
-    target_info_s info;
+    auto info = target_info_s{};
+
     info.mode = parse_target_mode(require_string(object, "mode"));
 
     if (const auto *column = find_member(object, "column")) {
@@ -243,7 +245,7 @@ namespace detail {
         throw std::runtime_error{"samples value must be an array"};
     }
 
-    std::vector<tabular_sample_s> result;
+    auto result = std::vector<tabular_sample_s>{};
     result.reserve(samples.Size());
 
     for (const auto &sample_value : samples.GetArray()) {
@@ -265,7 +267,7 @@ namespace detail {
 }
 
 [[nodiscard]] split_info_s read_split_info(const rapidjson::Value &root) {
-    split_info_s split;
+    auto split = split_info_s{};
 
     const auto *split_value = find_member(root, "split");
     if (!split_value) {
@@ -300,7 +302,8 @@ namespace detail {
 
 template<typename SampleT, typename Converter>
 [[nodiscard]] typed_dataset_s<SampleT> convert_dataset(const tabular_dataset_s &raw, Converter &&converter) {
-    typed_dataset_s<SampleT> result;
+    auto result = typed_dataset_s<SampleT>{};
+
     result.feature_names = raw.feature_names;
     result.features = raw.features;
     result.target_info = raw.target_info;

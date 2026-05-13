@@ -12,7 +12,7 @@ int main() try {
 
     auto model = ml::models::LinearRegression(dataset.feature_count());
 
-    model.train(dataset.samples,
+    model.train(dataset.train_samples,
                 1'000,
                 0.0001,
                 ml::regularization::regularization_s{.type = ml::regularization::regularization_type_e::l2_ridge,

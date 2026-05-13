@@ -45,8 +45,8 @@ double confusion_matrix_s::f1_score() const noexcept {
     return 2.0 * precision_value * recall_value / denominator;
 }
 
-confusion_matrix_s make_confusion_matrix(const std::vector<std::uint32_t> &targets,
-                                         const std::vector<std::uint32_t> &predictions) {
+confusion_matrix_s make_confusion_matrix(const std::span<const std::uint32_t> targets,
+                                         const std::span<const std::uint32_t> predictions) {
     if (targets.size() != predictions.size()) {
         throw std::runtime_error{"Targets and predictions size mismatch"};
     }

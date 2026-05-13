@@ -3,6 +3,7 @@
 #include <algorithm>
 #include <cassert>
 #include <optional>
+#include <print>
 #include <ranges>
 #include <stdexcept>
 
@@ -22,7 +23,7 @@ void LinearRegression::train(const std::vector<regression_sample_s> &samples,
 
     regularization::validate_regularization(regularization);
 
-    const auto record_metric = [&](std::optional<metrics::regression_metrics_s<double>> &record) {
+    const auto record_metric = [&](std::optional<metrics::regression_metrics_s> &record) {
         auto predictions = std::vector<double>{};
         auto targets = std::vector<double>{};
 

@@ -7,13 +7,18 @@ target_sources(
 
 target_sources(
         ml PRIVATE
+        regression/mean_absolute_error.cpp
         regression/mean_absolute_error.hpp
+        regression/mean_squared_error.cpp
         regression/mean_squared_error.hpp
+        regression/r2_score.cpp
         regression/r2_score.hpp
+        regression/root_mean_squared_error.cpp
         regression/root_mean_squared_error.hpp)
 
 target_sources(
         ml PRIVATE
         generalization.cpp
         generalization.hpp
+        metrics.cpp
         metrics.hpp)

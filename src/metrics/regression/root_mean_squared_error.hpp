@@ -3,17 +3,10 @@
 
 #pragma once
 
-#include <concepts>
-#include <vector>
-#include <cmath>
-
-#include "metrics/regression/mean_squared_error.hpp"
+#include <span>
 
 namespace ml::metrics::regression {
 
-template<std::convertible_to<double> T>
-[[nodiscard]] double root_mean_squared_error(const std::vector<T> &targets, const std::vector<T> &predictions) {
-    return std::sqrt(mean_squared_error(targets, predictions));
-}
+[[nodiscard]] double root_mean_squared_error(std::span<const double> targets, std::span<const double> predictions);
 
 } // namespace ml::metrics::regression

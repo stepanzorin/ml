@@ -8,8 +8,10 @@
 namespace ml::metrics::binary_classification {
 
 namespace {
+
 constexpr auto epsilon = 1e-15;
-}
+
+} // namespace
 
 double evaluate_log_loss(const std::span<const std::uint32_t> targets, const std::span<const double> probabilities) {
     if (targets.size() != probabilities.size()) {

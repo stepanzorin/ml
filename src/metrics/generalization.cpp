@@ -2,6 +2,7 @@
 
 #include <cmath>
 #include <format>
+#include <string_view>
 #include <utility>
 
 #include <spdlog/spdlog.h>
@@ -28,7 +29,9 @@ enum class generalization_type_e { underfitting, good, overfitting, suspicious_s
 }
 
 
-void warn_if_score_looks_suspicious(const std::string &metric_name, const double score, const metric_range_e range) {
+void warn_if_score_looks_suspicious(const std::string_view metric_name,
+                                    const double score,
+                                    const metric_range_e range) {
     if (!std::isfinite(score)) {
         spdlog::warn("{} score is not finite", metric_name);
         return;
@@ -60,8 +63,8 @@ void warn_if_score_looks_suspicious(const std::string &metric_name, const double
 
 namespace detail {
 
-[[nodiscard]] std::string make_gap_message(std::string &&message, const double relative_gap) {
-    return std::format("{}. Relative gap: {:.2f}%", std::move(message), relative_gap * 100.0);
+[[nodiscard]] std::string make_gap_message(const std::string_view message, const double relative_gap) {
+    return std::format("{}. Relative gap: {:.2f}%", message, relative_gap * 100.0);
 }
 
 } // namespace detail

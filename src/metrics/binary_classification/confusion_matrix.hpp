@@ -4,7 +4,7 @@
 #pragma once
 
 #include <cstdint>
-#include <vector>
+#include <span>
 
 namespace ml::metrics::binary_classification {
 
@@ -20,7 +20,7 @@ struct confusion_matrix_s {
     [[nodiscard]] double f1_score() const noexcept;
 };
 
-[[nodiscard]] confusion_matrix_s make_confusion_matrix(const std::vector<std::uint32_t> &targets,
-                                                       const std::vector<std::uint32_t> &predictions);
+[[nodiscard]] confusion_matrix_s make_confusion_matrix(std::span<const std::uint32_t> targets,
+                                                       std::span<const std::uint32_t> predictions);
 
 } // namespace ml::metrics::binary_classification

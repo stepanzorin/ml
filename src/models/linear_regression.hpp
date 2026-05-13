@@ -27,7 +27,7 @@ public:
     void print_parameters() const noexcept;
 
 private:
-    metrics::regression_metric_records_s<double> m_metrics_history;
+    metrics::regression_metric_records_s m_metrics_history;
 };
 
 } // namespace ml::models
