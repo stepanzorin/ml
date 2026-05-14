@@ -23,22 +23,7 @@ void LinearRegression::train(const std::vector<regression_sample_s> &samples,
 
     regularization::validate_regularization(regularization);
 
-    const auto record_metric = [&](std::optional<metrics::regression_metrics_s> &record) {
-        auto predictions = std::vector<double>{};
-        auto targets = std::vector<double>{};
-
-        predictions.reserve(samples.size());
-        targets.reserve(samples.size());
-
-        for (const auto &[features, target] : samples) {
-            predictions.push_back(predict(features));
-            targets.push_back(target);
-        }
-
-        record.emplace(metrics::evaluate_regression_metrics(targets, predictions));
-    };
-
-    record_metric(m_metrics_history.first);
+    m_train_results.first.emplace(evaluate(samples));
 
     const auto sample_count = static_cast<double>(samples.size());
 
@@ -77,7 +62,26 @@ void LinearRegression::train(const std::vector<regression_sample_s> &samples,
         }
     }
 
-    record_metric(m_metrics_history.last);
+    m_train_results.last.emplace(evaluate(samples));
+}
+
+metrics::regression_metrics_s LinearRegression::evaluate(const std::vector<regression_sample_s> &samples) const {
+    if (samples.empty()) {
+        throw std::runtime_error{"Samples must not be empty"};
+    }
+
+    auto predictions = std::vector<double>{};
+    auto targets = std::vector<double>{};
+
+    predictions.reserve(samples.size());
+    targets.reserve(samples.size());
+
+    for (const auto &[features, target] : samples) {
+        predictions.push_back(predict(features));
+        targets.push_back(target);
+    }
+
+    return metrics::evaluate_regression_metrics(targets, predictions);
 }
 
 double LinearRegression::predict(const std::vector<double> &features) const {
@@ -88,7 +92,7 @@ double LinearRegression::predict(const std::vector<double> &features) const {
 void LinearRegression::print_parameters() const noexcept {
     print_basic_parameters();
     std::println("train metrics:");
-    m_metrics_history.print_diff();
+    m_train_results.print_diff();
 }
 
 } // namespace ml::models

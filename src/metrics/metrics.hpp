@@ -14,6 +14,8 @@ struct regression_metrics_s {
     double mse = {};
     double rmse = {};
     double r2_score = {};
+
+    void print() const noexcept;
 };
 
 [[nodiscard]] regression_metrics_s evaluate_regression_metrics(std::span<const double> targets,
@@ -33,6 +35,8 @@ struct binary_classification_metrics_s {
     double recall = 0.0;
     double f1_score = 0.0;
     double log_loss = 0.0;
+
+    void print() const noexcept;
 };
 
 [[nodiscard]] binary_classification_metrics_s evaluate_binary_classification_metrics(

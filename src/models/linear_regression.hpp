@@ -22,12 +22,14 @@ public:
                double learning_rate,
                const regularization::regularization_s &regularization = {});
 
+    [[nodiscard]] metrics::regression_metrics_s evaluate(const std::vector<regression_sample_s> &samples) const;
+
     [[nodiscard]] double predict(const std::vector<double> &features) const;
 
     void print_parameters() const noexcept;
 
 private:
-    metrics::regression_metric_records_s m_metrics_history;
+    metrics::regression_metric_records_s m_train_results;
 };
 
 } // namespace ml::models

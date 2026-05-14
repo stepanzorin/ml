@@ -13,12 +13,14 @@ int main() try {
     auto model = ml::models::LinearRegression(dataset.feature_count());
 
     model.train(dataset.train_samples,
-                1'000,
-                0.0001,
-                ml::regularization::regularization_s{.type = ml::regularization::regularization_type_e::l2_ridge,
-                                                     .l2_lambda = 0.001});
+                50'000,
+                0.0001);
 
-    model.print_parameters();
+    const auto train_metrics = model.evaluate(dataset.train_samples);
+    const auto test_metrics = model.evaluate(dataset.test_samples);
+
+    train_metrics.print();
+    test_metrics.print();
 
     return EXIT_SUCCESS;
 } catch (const std::exception &ex) {

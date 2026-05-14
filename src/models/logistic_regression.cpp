@@ -40,32 +40,7 @@ void LogisticRegression::train(const std::vector<binary_classification_sample_s>
 
     regularization::validate_regularization(regularization);
 
-    const auto record_metric = [&](std::optional<metrics::binary_classification_metrics_s> &record) {
-        auto targets = std::vector<std::uint32_t>{};
-        auto predictions = std::vector<std::uint32_t>{};
-        auto probabilities = std::vector<double>{};
-
-        targets.reserve(samples.size());
-        predictions.reserve(samples.size());
-        probabilities.reserve(samples.size());
-
-        for (const auto &[features, label] : samples) {
-            if (label > 1) {
-                throw std::runtime_error{"Binary classification label must be 0 or 1"};
-            }
-
-            const auto probability = predict_probability(features);
-            const auto prediction = probability >= threshold ? 1u : 0u;
-
-            targets.push_back(label);
-            predictions.push_back(prediction);
-            probabilities.push_back(probability);
-        }
-
-        record.emplace(metrics::evaluate_binary_classification_metrics(targets, predictions, probabilities));
-    };
-
-    record_metric(m_metrics_history.first);
+    m_train_results.first.emplace(evaluate(samples));
 
     const auto sample_count = static_cast<double>(samples.size());
 
@@ -125,7 +100,38 @@ void LogisticRegression::train(const std::vector<binary_classification_sample_s>
         }
     }
 
-    record_metric(m_metrics_history.last);
+    m_train_results.last.emplace(evaluate(samples));
+}
+
+metrics::binary_classification_metrics_s LogisticRegression::evaluate(
+        const std::vector<binary_classification_sample_s> &samples,
+        const double threshold) const {
+    if (samples.empty()) {
+        throw std::runtime_error{"Samples must not be empty"};
+    }
+
+    auto targets = std::vector<std::uint32_t>{};
+    auto predictions = std::vector<std::uint32_t>{};
+    auto probabilities = std::vector<double>{};
+
+    targets.reserve(samples.size());
+    predictions.reserve(samples.size());
+    probabilities.reserve(samples.size());
+
+    for (const auto &[features, label] : samples) {
+        if (label > 1) {
+            throw std::runtime_error{"Binary classification label must be 0 or 1"};
+        }
+
+        const auto probability = predict_probability(features);
+        const auto prediction = probability >= threshold ? 1u : 0u;
+
+        targets.push_back(label);
+        predictions.push_back(prediction);
+        probabilities.push_back(probability);
+    }
+
+    return metrics::evaluate_binary_classification_metrics(targets, predictions, probabilities);
 }
 
 double LogisticRegression::linear_score(const std::vector<double> &features) const {
@@ -148,7 +154,7 @@ double LogisticRegression::predict_probability(const std::vector<double> &featur
 void LogisticRegression::print_parameters() const noexcept {
     print_basic_parameters();
     std::println("train metrics:");
-    m_metrics_history.print_diff();
+    m_train_results.print_diff();
 }
 
 } // namespace ml::models
