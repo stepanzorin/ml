@@ -8,9 +8,11 @@
 from __future__ import annotations
 
 import argparse
+import ast
 import csv
 import json
 import math
+import operator
 import random
 import statistics
 from collections import Counter, OrderedDict
@@ -48,6 +50,12 @@ DATE_FORMATS = (
 
 
 @dataclass(frozen=True)
+class EngineeredFeatureSpec:
+    name: str
+    expression: str
+
+
+@dataclass(frozen=True)
 class Options:
     input_csv: Path
     output_json: Path
@@ -61,6 +69,7 @@ class Options:
     numeric_columns: set[str]
     date_columns: set[str]
     ignored_columns: set[str]
+    engineered_features: list[EngineeredFeatureSpec]
     detect_sample_size: int
     max_one_hot_cardinality: int
     top_k: int
@@ -114,6 +123,20 @@ class ScalerSpec:
 
 RawRow = dict[str, str]
 RawRows = list[RawRow]
+
+
+_ALLOWED_BIN_OPS = {
+    ast.Add: operator.add,
+    ast.Sub: operator.sub,
+    ast.Mult: operator.mul,
+    ast.Div: operator.truediv,
+    ast.Pow: operator.pow,
+}
+
+_ALLOWED_UNARY_OPS = {
+    ast.UAdd: operator.pos,
+    ast.USub: operator.neg,
+}
 
 
 def split_csv_arg(value: str | None) -> set[str]:
@@ -181,6 +204,94 @@ def ensure_unique_columns(columns: Sequence[str]) -> list[str]:
         count = seen.get(name, 0)
         seen[name] = count + 1
         result.append(name if count == 0 else f"{name}__{count + 1}")
+    return result
+
+
+def parse_engineered_features(values: list[str]) -> list[EngineeredFeatureSpec]:
+    result: list[EngineeredFeatureSpec] = []
+    seen: set[str] = set()
+
+    for raw in values:
+        if "=" not in raw:
+            raise ValueError(f"Invalid --add-feature format: {raw!r}. Expected: name=expression")
+
+        name, expression = raw.split("=", 1)
+        name = name.strip()
+        expression = expression.strip()
+
+        if not name:
+            raise ValueError(f"Engineered feature name is empty: {raw!r}")
+        if not name.isidentifier():
+            raise ValueError(f"Engineered feature name must be a valid identifier: {name!r}")
+        if not expression:
+            raise ValueError(f"Engineered feature expression is empty: {raw!r}")
+        if name in seen:
+            raise ValueError(f"Duplicate engineered feature name: {name!r}")
+
+        # Parse now, so syntax errors are reported before processing the dataset.
+        ast.parse(expression, mode="eval")
+
+        seen.add(name)
+        result.append(EngineeredFeatureSpec(name=name, expression=expression))
+
+    return result
+
+
+def expression_used_names(expression: str) -> set[str]:
+    tree = ast.parse(expression, mode="eval")
+    return {node.id for node in ast.walk(tree) if isinstance(node, ast.Name)}
+
+
+def evaluate_numeric_expression(expression: str, variables: dict[str, float]) -> float:
+    tree = ast.parse(expression, mode="eval")
+
+    def eval_node(node: ast.AST) -> float:
+        if isinstance(node, ast.Expression):
+            return eval_node(node.body)
+
+        if isinstance(node, ast.Constant):
+            if isinstance(node.value, bool):
+                raise ValueError(f"Unsupported boolean constant in expression: {node.value!r}")
+            if isinstance(node.value, (int, float)):
+                return float(node.value)
+            raise ValueError(f"Unsupported constant in expression: {node.value!r}")
+
+        if isinstance(node, ast.Name):
+            if node.id not in variables:
+                raise ValueError(f"Unknown variable in engineered feature expression: {node.id!r}")
+            return variables[node.id]
+
+        if isinstance(node, ast.BinOp):
+            op_type = type(node.op)
+            if op_type not in _ALLOWED_BIN_OPS:
+                raise ValueError(f"Unsupported binary operator in expression: {op_type.__name__}")
+
+            left = eval_node(node.left)
+            right = eval_node(node.right)
+
+            if isinstance(node.op, ast.Div) and right == 0.0:
+                raise ValueError("Division by zero in engineered feature expression")
+
+            result = float(_ALLOWED_BIN_OPS[op_type](left, right))
+            if not math.isfinite(result):
+                raise ValueError(f"Expression produced non-finite value: {expression!r}")
+            return result
+
+        if isinstance(node, ast.UnaryOp):
+            op_type = type(node.op)
+            if op_type not in _ALLOWED_UNARY_OPS:
+                raise ValueError(f"Unsupported unary operator in expression: {op_type.__name__}")
+
+            result = float(_ALLOWED_UNARY_OPS[op_type](eval_node(node.operand)))
+            if not math.isfinite(result):
+                raise ValueError(f"Expression produced non-finite value: {expression!r}")
+            return result
+
+        raise ValueError(f"Unsupported expression node: {type(node).__name__}")
+
+    result = eval_node(tree)
+    if not math.isfinite(result):
+        raise ValueError(f"Engineered feature expression produced non-finite value: {expression!r}")
     return result
 
 
@@ -317,6 +428,43 @@ def fit_numeric_specs(columns: list[str], fit_rows: RawRows, kinds: OrderedDict[
     return specs
 
 
+def validate_engineered_features(options: Options, columns: list[str], numeric_specs: dict[str, NumericSpec]) -> None:
+    if not options.engineered_features:
+        return
+
+    target_columns: set[str] = set(options.target_columns)
+    if options.target_column:
+        target_columns.add(options.target_column)
+
+    available_names = set(numeric_specs.keys())
+    all_input_columns = set(columns)
+    created_names: set[str] = set()
+
+    for spec in options.engineered_features:
+        if spec.name in all_input_columns:
+            raise ValueError(f"Engineered feature name conflicts with existing CSV column: {spec.name!r}")
+        if spec.name in created_names:
+            raise ValueError(f"Duplicate engineered feature name: {spec.name!r}")
+
+        used = expression_used_names(spec.expression)
+        leaked = used & target_columns
+        if leaked:
+            raise ValueError(
+                f"Engineered feature {spec.name!r} uses target column(s): {sorted(leaked)}. "
+                "This is target leakage."
+            )
+
+        unknown = used - available_names
+        if unknown:
+            raise ValueError(
+                f"Engineered feature {spec.name!r} uses unknown or non-numeric variable(s): {sorted(unknown)}. "
+                f"Available numeric variables: {sorted(available_names)}"
+            )
+
+        created_names.add(spec.name)
+        available_names.add(spec.name)
+
+
 def fit_categorical_specs(columns: list[str], fit_rows: RawRows, kinds: OrderedDict[str, ColumnKind], options: Options) -> dict[str, CategoricalSpec]:
     specs: dict[str, CategoricalSpec] = {}
     for column in columns:
@@ -371,6 +519,35 @@ def encode_numeric(column: str, raw_value: str, spec: NumericSpec) -> float:
     return spec.fill_value
 
 
+def build_numeric_variables(row: RawRow, numeric_specs: dict[str, NumericSpec]) -> dict[str, float]:
+    return {
+        column: encode_numeric(column, row.get(column, ""), spec)
+        for column, spec in numeric_specs.items()
+    }
+
+
+def encode_engineered_features(
+        row: RawRow,
+        numeric_specs: dict[str, NumericSpec],
+        engineered_features: list[EngineeredFeatureSpec],
+) -> list[float]:
+    if not engineered_features:
+        return []
+
+    variables = build_numeric_variables(row, numeric_specs)
+    result: list[float] = []
+
+    for spec in engineered_features:
+        value = evaluate_numeric_expression(spec.expression, variables)
+        result.append(value)
+        # Allows later engineered features to depend on earlier ones:
+        # --add-feature "gross=quantity*unit_price"
+        # --add-feature "net=gross*(1-discount)"
+        variables[spec.name] = value
+
+    return result
+
+
 def encode_categorical(raw_value: str, spec: CategoricalSpec) -> list[float]:
     value = trim(raw_value)
     value = spec.missing_category if is_missing(value) else value
@@ -399,7 +576,13 @@ def encode_date(column: str, raw_value: str, spec: DateSpec) -> list[float]:
     ]
 
 
-def build_feature_infos(columns: list[str], kinds: OrderedDict[str, ColumnKind], categorical_specs: dict[str, CategoricalSpec], date_specs: dict[str, DateSpec]) -> list[FeatureInfo]:
+def build_feature_infos(
+        columns: list[str],
+        kinds: OrderedDict[str, ColumnKind],
+        categorical_specs: dict[str, CategoricalSpec],
+        date_specs: dict[str, DateSpec],
+        engineered_features: list[EngineeredFeatureSpec],
+) -> list[FeatureInfo]:
     infos: list[FeatureInfo] = []
     for column in columns:
         kind = kinds[column]
@@ -416,10 +599,22 @@ def build_feature_infos(columns: list[str], kinds: OrderedDict[str, ColumnKind],
             else:
                 for suffix in ("year", "month_sin", "month_cos", "weekday_sin", "weekday_cos"):
                     infos.append(FeatureInfo(name=f"{column}:{suffix}", source_column=column, kind="date_component"))
+
+    for spec in engineered_features:
+        infos.append(FeatureInfo(name=spec.name, source_column=spec.expression, kind="engineered_numeric"))
+
     return infos
 
 
-def encode_features(row: RawRow, columns: list[str], kinds: OrderedDict[str, ColumnKind], numeric_specs: dict[str, NumericSpec], categorical_specs: dict[str, CategoricalSpec], date_specs: dict[str, DateSpec]) -> list[float]:
+def encode_features(
+        row: RawRow,
+        columns: list[str],
+        kinds: OrderedDict[str, ColumnKind],
+        numeric_specs: dict[str, NumericSpec],
+        categorical_specs: dict[str, CategoricalSpec],
+        date_specs: dict[str, DateSpec],
+        engineered_features: list[EngineeredFeatureSpec],
+) -> list[float]:
     features: list[float] = []
     for column in columns:
         kind = kinds[column]
@@ -434,11 +629,13 @@ def encode_features(row: RawRow, columns: list[str], kinds: OrderedDict[str, Col
             features.extend(encode_date(column, raw_value, date_specs[column]))
         else:
             raise ValueError(f"Unsupported column kind for '{column}': {kind}")
+
+    features.extend(encode_engineered_features(row, numeric_specs, engineered_features))
     return features
 
 
 def is_scalable_feature(info: FeatureInfo) -> bool:
-    if info.kind in {"numeric", "date_numeric"}:
+    if info.kind in {"numeric", "date_numeric", "engineered_numeric"}:
         return True
     if info.kind == "date_component" and info.name.endswith(":year"):
         return True
@@ -633,7 +830,7 @@ def transform_rows(
 ) -> list[dict[str, Any]]:
     samples: list[dict[str, Any]] = []
     for row in rows:
-        raw_features = encode_features(row, columns, kinds, numeric_specs, categorical_specs, date_specs)
+        raw_features = encode_features(row, columns, kinds, numeric_specs, categorical_specs, date_specs, options.engineered_features)
         scaled_features = apply_feature_scalers(raw_features, feature_scalers)
         sample: dict[str, Any] = {"features": scaled_features}
         target = encode_target(row, options, target_info, target_aux, target_scaler)
@@ -650,8 +847,12 @@ def build_raw_features(
         numeric_specs: dict[str, NumericSpec],
         categorical_specs: dict[str, CategoricalSpec],
         date_specs: dict[str, DateSpec],
+        engineered_features: list[EngineeredFeatureSpec],
 ) -> list[list[float]]:
-    return [encode_features(row, columns, kinds, numeric_specs, categorical_specs, date_specs) for row in rows]
+    return [
+        encode_features(row, columns, kinds, numeric_specs, categorical_specs, date_specs, engineered_features)
+        for row in rows
+    ]
 
 
 def preprocess(options: Options) -> dict[str, Any]:
@@ -677,11 +878,12 @@ def preprocess(options: Options) -> dict[str, Any]:
     train_fit_rows, train_rows, test_rows, split = split_fit_rows(rows, options)
     kinds = infer_kinds(columns, train_fit_rows, options)
     numeric_specs = fit_numeric_specs(columns, train_fit_rows, kinds, options)
+    validate_engineered_features(options, columns, numeric_specs)
     categorical_specs = fit_categorical_specs(columns, train_fit_rows, kinds, options)
     date_specs = fit_date_specs(columns, kinds, options)
-    feature_infos = build_feature_infos(columns, kinds, categorical_specs, date_specs)
+    feature_infos = build_feature_infos(columns, kinds, categorical_specs, date_specs, options.engineered_features)
 
-    fit_raw_features = build_raw_features(train_fit_rows, columns, kinds, numeric_specs, categorical_specs, date_specs)
+    fit_raw_features = build_raw_features(train_fit_rows, columns, kinds, numeric_specs, categorical_specs, date_specs, options.engineered_features)
     feature_scalers = fit_feature_scalers(feature_infos, fit_raw_features, options.scale_numeric)
 
     target_scaler = fit_target_scaler(options, train_fit_rows)
@@ -733,7 +935,7 @@ def preprocess(options: Options) -> dict[str, Any]:
     }
 
     result: dict[str, Any] = {
-        "format_version": 4,
+        "format_version": 5,
         "task_type": options.task,
         "source_csv": str(options.input_csv),
         "target": target_info,
@@ -748,10 +950,11 @@ def preprocess(options: Options) -> dict[str, Any]:
             "numeric": {name: asdict(spec) for name, spec in numeric_specs.items()},
             "categorical": {name: asdict(spec) for name, spec in categorical_specs.items()},
             "date": {name: asdict(spec) for name, spec in date_specs.items()},
+            "engineered_features": [asdict(spec) for spec in options.engineered_features],
             "feature_scaling": {
                 "mode": options.scale_numeric,
                 "scaled_features": feature_scaler_by_name,
-                "note": "Only continuous numeric/date features are scaled. One-hot features are not scaled.",
+                "note": "Only continuous numeric/date/engineered features are scaled. One-hot features are not scaled.",
             },
             "target_scaling": asdict(target_scaler) if target_scaler is not None else {"mode": "none"},
             "missing_tokens": sorted(MISSING_TOKENS),
@@ -787,12 +990,13 @@ def parse_args() -> Options:
     parser.add_argument("--numeric", default="", help="Comma-separated columns forced to numeric")
     parser.add_argument("--date", default="", help="Comma-separated columns forced to date")
     parser.add_argument("--ignore", default="", help="Comma-separated columns ignored from features")
+    parser.add_argument("--add-feature", action="append", default=[], help="Add engineered numeric feature. Format: name=expression. Example: gross_amount=quantity*unit_price")
     parser.add_argument("--detect-sample-size", type=int, default=50, help="Non-empty values checked per column for type detection")
     parser.add_argument("--max-one-hot-cardinality", type=int, default=20, help="If unique categories <= this value, normal one-hot is used")
     parser.add_argument("--top-k", type=int, default=20, help="Top K categories kept for high-cardinality columns")
     parser.add_argument("--numeric-missing", choices=("error", "mean", "zero"), default="error")
     parser.add_argument("--date-encoding", choices=("components", "days_since_epoch"), default="components")
-    parser.add_argument("--scale-numeric", choices=("none", "standard", "minmax"), default="none", help="Scale continuous numeric/date features. One-hot features are not scaled")
+    parser.add_argument("--scale-numeric", choices=("none", "standard", "minmax"), default="none", help="Scale continuous numeric/date/engineered features. One-hot features are not scaled")
     parser.add_argument("--scale-target", choices=("none", "standard", "minmax"), default="none", help="Scale regression target values")
     parser.add_argument("--train-ratio", "--train_ratio", dest="train_ratio", type=float, default=None, help="Optional train/test split ratio, e.g. 0.8")
     parser.add_argument("--shuffle", action="store_true", help="Shuffle rows before optional split/output")
@@ -826,6 +1030,8 @@ def parse_args() -> Options:
         target_column = None
         target_columns = []
 
+    engineered_features = parse_engineered_features(args.add_feature)
+
     return Options(
         input_csv=input_csv,
         output_json=output_json,
@@ -839,6 +1045,7 @@ def parse_args() -> Options:
         numeric_columns=split_csv_arg(args.numeric),
         date_columns=split_csv_arg(args.date),
         ignored_columns=split_csv_arg(args.ignore),
+        engineered_features=engineered_features,
         detect_sample_size=args.detect_sample_size,
         max_one_hot_cardinality=args.max_one_hot_cardinality,
         top_k=args.top_k,
@@ -865,6 +1072,7 @@ def main() -> None:
     print(f"Task: {result['task_type']}")
     print(f"Rows: {result['row_count']}")
     print(f"Features: {result['feature_count']}")
+    print(f"Engineered features: {len(options.engineered_features)}")
     print(f"Scale numeric: {options.scale_numeric}")
     print(f"Scale target: {options.scale_target}")
     if result.get("split", {}).get("has_split"):
