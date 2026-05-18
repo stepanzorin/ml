@@ -1,7 +1,7 @@
 #include "confusion_matrix.hpp"
 
+#include <cassert>
 #include <ranges>
-#include <stdexcept>
 
 namespace ml::metrics::binary_classification {
 
@@ -47,20 +47,14 @@ double confusion_matrix_s::f1_score() const noexcept {
 
 confusion_matrix_s make_confusion_matrix(const std::span<const std::uint32_t> targets,
                                          const std::span<const std::uint32_t> predictions) {
-    if (targets.size() != predictions.size()) {
-        throw std::runtime_error{"Targets and predictions size mismatch"};
-    }
-
-    if (targets.empty()) {
-        throw std::runtime_error{"Targets must not be empty"};
-    }
+    assert(!targets.empty());
+    assert(targets.size() == predictions.size());
 
     auto confusion_matrix = confusion_matrix_s{};
 
     for (const auto &&[target, prediction] : std::views::zip(targets, predictions)) {
-        if (target > 1 || prediction > 1) {
-            throw std::runtime_error{"Binary classification labels must be 0 or 1"};
-        }
+        assert(target <= 1);
+        assert(prediction <= 1);
 
         if (target == 1 && prediction == 1) {
             ++confusion_matrix.true_positive;

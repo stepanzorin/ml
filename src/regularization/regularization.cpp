@@ -21,20 +21,19 @@ namespace {
 } // namespace
 
 void validate_regularization(const regularization_s &regularization) {
-    if (regularization.l1_lambda < 0.0) {
-        throw std::runtime_error{"L1 lambda must not be negative"};
-    }
-
-    if (regularization.l2_lambda < 0.0) {
-        throw std::runtime_error{"L2 lambda must not be negative"};
-    }
-
     switch (regularization.type) {
-        case regularization_type_e::none: break;
+        case regularization_type_e::none:
+            if (regularization.l1_lambda != 0.0 || regularization.l2_lambda != 0.0) {
+                throw std::runtime_error{"No regularization selected, but lambda values are > 0"};
+            }
+            break;
 
         case regularization_type_e::l1_lasso:
             if (regularization.l1_lambda <= 0.0) {
                 throw std::runtime_error{"L1 regularization requires l1_lambda > 0"};
+            }
+            if (regularization.l2_lambda != 0.0) {
+                throw std::runtime_error{"L1 regularization cannot use l2_lambda"};
             }
             break;
 
@@ -42,11 +41,17 @@ void validate_regularization(const regularization_s &regularization) {
             if (regularization.l2_lambda <= 0.0) {
                 throw std::runtime_error{"L2 regularization requires l2_lambda > 0"};
             }
+            if (regularization.l1_lambda != 0.0) {
+                throw std::runtime_error{"L2 regularization cannot use l1_lambda"};
+            }
             break;
 
         case regularization_type_e::elastic_net:
+            if (regularization.l1_lambda < 0.0 || regularization.l2_lambda < 0.0) {
+                throw std::runtime_error{"Elastic Net lambdas must not be negative"};
+            }
             if (regularization.l1_lambda <= 0.0 && regularization.l2_lambda <= 0.0) {
-                throw std::runtime_error{"Elastic Net requires l1_lambda > 0 or l2_lambda > 0"};
+                throw std::runtime_error{"Elastic Net requires at least one lambda > 0"};
             }
             break;
     }

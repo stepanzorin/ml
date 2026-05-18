@@ -1,19 +1,14 @@
 #include "mean_absolute_error.hpp"
 
+#include <cassert>
 #include <cmath>
 #include <ranges>
-#include <stdexcept>
 
 namespace ml::metrics::regression {
 
 double mean_absolute_error(const std::span<const double> targets, const std::span<const double> predictions) {
-    if (targets.size() != predictions.size()) {
-        throw std::runtime_error{"Targets and predictions size mismatch"};
-    }
-
-    if (targets.empty()) {
-        throw std::runtime_error{"Targets must not be empty"};
-    }
+    assert(!targets.empty());
+    assert(targets.size() == predictions.size());
 
     auto error_sum = 0.0;
 

@@ -6,8 +6,6 @@
 #include <cstddef>
 #include <vector>
 
-#include "types.hpp"
-
 namespace ml::models::detail {
 
 class LinearScoringModelBase {

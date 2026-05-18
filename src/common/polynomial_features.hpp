@@ -4,10 +4,10 @@
 #pragma once
 
 #include <algorithm>
+#include <cassert>
 #include <cmath>
 #include <cstdint>
 #include <ranges>
-#include <stdexcept>
 #include <vector>
 
 #include "common/traits.hpp"
@@ -39,9 +39,7 @@ template<std::copy_constructible T>
 template<feature T>
 [[nodiscard]] std::vector<T> expand_with_powers(const std::vector<T> &features,
                                                 const std::vector<std::uint32_t> &degrees) {
-    if (features.empty()) {
-        throw std::runtime_error{"Features must not be empty"};
-    }
+    assert(!features.empty());
 
     if (degrees.empty()) {
         return features;
@@ -85,4 +83,4 @@ template<feature T>
     return detail::concat_vectors(degree_expanded_features, interaction_features);
 }
 
-} // namespace ml::util
+} // namespace ml::common

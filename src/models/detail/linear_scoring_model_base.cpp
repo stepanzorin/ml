@@ -1,18 +1,16 @@
 #include "linear_scoring_model_base.hpp"
 
 #include <algorithm>
+#include <cassert>
 #include <print>
 #include <ranges>
-#include <stdexcept>
 
 namespace ml::models::detail {
 
 double LinearScoringModelBase::score(const std::vector<double> &features) const {
-    if (features.size() != m_weights.size()) {
-        throw std::runtime_error{"Feature count must match weight count"};
-    }
+    assert(features.size() == m_weights.size());
 
-    double prediction = m_bias;
+    auto prediction = m_bias;
 
     for (const auto [weight, feature] : std::views::zip(m_weights, features)) {
         prediction += weight * feature;

@@ -10,6 +10,7 @@
 #include "metrics/metrics.hpp"
 #include "models/detail/linear_scoring_model_base.hpp"
 #include "regularization/regularization.hpp"
+#include "types.hpp"
 
 namespace ml::models {
 

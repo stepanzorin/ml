@@ -13,13 +13,8 @@ void LinearRegression::train(const std::vector<regression_sample_s> &samples,
                              const std::uint32_t epoch_count,
                              const double learning_rate,
                              const regularization::regularization_s &regularization) {
-    if (samples.empty()) {
-        throw std::runtime_error{"Samples must not be empty"};
-    }
-
-    if (learning_rate <= 0.0) {
-        throw std::runtime_error{"Learning rate must be positive"};
-    }
+    assert(!samples.empty());
+    assert(learning_rate > 0.0);
 
     regularization::validate_regularization(regularization);
 
@@ -66,9 +61,7 @@ void LinearRegression::train(const std::vector<regression_sample_s> &samples,
 }
 
 metrics::regression_metrics_s LinearRegression::evaluate(const std::vector<regression_sample_s> &samples) const {
-    if (samples.empty()) {
-        throw std::runtime_error{"Samples must not be empty"};
-    }
+    assert(!samples.empty());
 
     auto predictions = std::vector<double>{};
     auto targets = std::vector<double>{};

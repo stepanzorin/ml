@@ -12,7 +12,7 @@ int main() try {
 
     auto model = ml::models::LinearRegression(dataset.feature_count());
 
-    model.train(dataset.train_samples, 30'000, 0.003);
+    model.train(dataset.train_samples, 1, 0.003);
 
     const auto train_metrics = model.evaluate(dataset.train_samples);
     const auto test_metrics = model.evaluate(dataset.test_samples);
