@@ -4,9 +4,10 @@
 #pragma once
 
 #include <algorithm>
+#include <cassert>
+#include <cstddef>
 #include <ranges>
 #include <span>
-#include <stdexcept>
 #include <vector>
 
 #include "algorithms/euclidean_distance.hpp"
@@ -22,21 +23,10 @@ template<typename SampleType>
 [[nodiscard]] std::vector<neighbor_s> find_k_nearest_neighbors(const std::size_t k,
                                                                const std::span<const SampleType> samples,
                                                                const std::span<const double> query_features) {
-    if (k == 0) {
-        throw std::invalid_argument{"k must be greater than 0"};
-    }
-
-    if (samples.empty()) {
-        throw std::invalid_argument{"Samples must not be empty"};
-    }
-
-    if (query_features.empty()) {
-        throw std::invalid_argument{"query features must not be empty"};
-    }
-
-    if (k > samples.size()) {
-        throw std::out_of_range{"k can not be greater than sample count"};
-    }
+    assert(k != 0);
+    assert(!samples.empty());
+    assert(!query_features.empty());
+    assert(k <= samples.size());
 
     const auto neighbor_less = [](const neighbor_s &a, const neighbor_s &b) {
         if (a.squared_distance != b.squared_distance) {

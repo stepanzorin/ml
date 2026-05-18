@@ -7,6 +7,8 @@ target_sources(
 
 target_sources(
         ml PRIVATE
+        knn_classifier.cpp
+        knn_classifier.hpp
         knn_regressor.cpp
         knn_regressor.hpp
         linear_regression.cpp

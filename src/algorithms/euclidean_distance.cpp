@@ -1,15 +1,13 @@
 #include "euclidean_distance.hpp"
 
 #include <algorithm>
+#include <cassert>
 #include <ranges>
-#include <stdexcept>
 
 namespace ml::algorithms {
 
 double compute_squared_euclidean_distance(const std::span<const double> lhs, const std::span<const double> rhs) {
-    if (lhs.size() != rhs.size()) {
-        throw std::runtime_error{"Failed to compute squared Euclidean distance: feature vector size mismatch"};
-    }
+    assert(lhs.size() == rhs.size());
 
     auto sum = 0.0;
 

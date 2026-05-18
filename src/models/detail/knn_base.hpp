@@ -3,12 +3,9 @@
 
 #pragma once
 
+#include <cassert>
 #include <cstddef>
-#include <stdexcept>
 #include <vector>
-
-#include "models/detail/knn_base.hpp"
-#include "types.hpp"
 
 namespace ml::models::detail {
 
@@ -22,21 +19,23 @@ class KNNBase {
 public:
     KNNBase() = delete;
 
-    explicit KNNBase(const std::size_t k) : m_k{k} {}
+    explicit KNNBase(const std::size_t k) : m_k{k} { assert(k != 0); }
 
-    void fit(std::vector<SampleType> samples) {
-        if (samples.empty()) {
-            throw std::runtime_error{"Samples must not be empty"};
-        }
-        m_samples = std::move(samples);
-        m_feature_count = m_samples.size();
+    void fit(const std::vector<SampleType> &samples) {
+        assert(!samples.empty());
+        assert(samples.size() >= m_k);
+
+        m_sample_feature_count = samples.front().features.size();
+        assert(m_sample_feature_count > 0);
+
+        m_samples = samples;
     }
 
     virtual ~KNNBase() = default;
 
-private:
+protected:
     std::size_t m_k = 0;
-    std::size_t m_feature_count = 0;
+    std::size_t m_sample_feature_count = 0;
     std::vector<SampleType> m_samples = {};
 };
 
